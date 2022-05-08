@@ -1,0 +1,115 @@
+---
+title: "Exercise2"
+author: "Kalyango Jovan"
+date: "10/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+Packages 
+```{r, echo=FALSE, include=TRUE, warning=FALSE}
+#install.packages("haven")
+library(haven)
+library(rjags)
+library(mcmcplots)
+
+```
+
+# Loading Data
+
+```{r}
+Exercise_2_Data <- read_sav("Exercise 2 - Data.sav")
+View(Exercise_2_Data)
+```
+
+
+# Initialization 
+
+They are completely arbitrary values, so chosen that way, but i will test if i can use what the linear model gives in one of the chains.  
+```{r}
+model <- lm(attitude ~ agreeableness + extraversion, data = Exercise_2_Data)
+summary(model)
+
+```
+
+
+```{r}
+init1 <- list(b = c( 0.869, 0.259, -0.08), tau = 0.5)
+init2 <- list(b = c(7, 10, -4), tau = 0.05)
+init <- list(init1, init2)
+
+```
+
+
+Next, create a model object in R by means of the jags.model function. We need to specify
+a model .txt-file, data and number of chains:
+```{r}
+model.def2 <- jags.model(file = "Exercise2Model1.txt", data = Exercise_2_Data, n.chains = 2)
+```
+
+
+```{r}
+# Burn-in period 
+update(object = model, n.iter = 1000)
+
+# Sample from the posterior distribution
+parameters <- c("b", "sigma")
+samples <- coda.samples(model = model.def2,  variable.names = parameters, n.iter = 10000)
+summary(samples)
+```
+
+## Convergence
+
+```{r}
+# History and density plot
+plot(samples)
+
+```
+
+
+```{r}
+# Autocorrelation plots
+autocorr.plot(samples)
+```
+
+```{r}
+# Gelman-Rubin diagnostic
+gelman.plot(samples)
+
+```
+
+Only agreeableness $b[2]$ can be distinguished from zero based on the 95% CCI $[0.075, 0.44]$, so only agreeableness seems a reasonable predictor.
+
+## G: Analysis with an interaction effect
+
+Next, create a model object in R by means of the jags.model function. We need to specify
+a model .txt-file, data and number of chains:
+```{r}
+model.defint <- jags.model(file = "Exercise2Modelinter.txt", data = Exercise_2_Data, n.chains = 2)
+```
+
+
+```{r}
+# Burn-in period 
+update(object = model, n.iter = 1000)
+
+# Sample from the posterior distribution
+parameters <- c("b", "sigma")
+samples2 <- coda.samples(model = model.defint,  variable.names = parameters, n.iter = 10000)
+summary(samples2)
+```
+
+$b[4]= 0.11$ cannot be distinguished from zero based on the 95% CCI $[-0.021, 0.24]$, so there is little evidence for an interaction effect.
+
+```{r}
+mcmcplot(mcmcout = samples)
+```
+
+
+
+
+
+

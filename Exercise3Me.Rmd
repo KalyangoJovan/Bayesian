@@ -1,0 +1,16 @@
+---
+title: "Exercise3"
+author: "Kalyango Jovan"
+date: "15/03/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+```{r}
+source("Exercise 3 - Data.txt") #load the data
+```
+
+

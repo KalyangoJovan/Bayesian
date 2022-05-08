@@ -1,0 +1,26 @@
+
+
+model{
+
+# likelihood of the data 
+ for(i in 1:172){
+attitude[i] ~ dnorm(mu[i], tau)
+mu[i] <- b[1] + b[2]*agreeableness[i] + b[3]*extraversion[i]  
+} # end the loop here
+
+# prior 
+tau ~ dgamma(0.001,0.001)
+
+for(k in 1:3){
+b[k] ~ dnorm(0, 0.000001)
+} # coeficent loop ends here 
+
+# output of interest 
+sigma2 <- 1/tau
+sigma <- sqrt(sigma2)
+} 
+
+
+
+
+
