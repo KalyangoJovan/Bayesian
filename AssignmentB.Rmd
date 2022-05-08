@@ -1,0 +1,66 @@
+---
+title: "Assigniment Bayesian"
+author: "Kalyango Jovan"
+date: "02/04/2022"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+
+
+## 2 & 3
+
+
+```{r, include=FALSE}
+## Houses data
+# Renaming variables in the dataset in terms of y(dependent variable) and Xs( independent variables or predictors or regressors)
+houses$y <- houses$Price # the dependent variable 
+houses$x1 <- houses$Taxes # 
+houses$x2 <- houses$Beds
+houses$x3 <- houses$Baths
+houses$x4 <- houses$Size
+
+frequent_model <- lm(y~ x1 + x2 + x3+x4, data= houses)
+summary(frequent_model)
+
+(summary(frequent_model)$sigma)^2 # residual variance computed from SE^2 
+regressors <- houses %>%
+  dplyr::select(c(x1,x2,x3,x4)) # predictor variables(regressors) extracted 
+regressors <- as.matrix(regressors) # forced to be a matrix
+regressors
+
+#this is the frequentist way of modeling, X4(Size seems the most signficant), while X3(Baths) is not significant. 
+```
+
+
+```{r}
+houses
+```
+
+
+```{r}
+# the intercept 
+sample_b0<- function(b1,b2,b3, b4, sigma, mu00, tau00, data){
+  mean <- ((sum(data$y-b1*data$x1-b2*data$x2-b3*data$x3-b4*data$x4)/sigma)+mu00/tau00)/(nrow(data)/sigma + 1/tau00)
+  variance<- 1/(nrow(data)/sigma + 1/tau00) # variance of intercept 
+  return(rnorm(1,  mean= mean, sd= sqrt(variance)))
+}
+
+```
+
+
+```{r, include=FALSE}
+# the Taxes
+sample_b1<- function(b0,b2,b3, b4, sigma, mu11, tau11, data){
+  mean <- ((sum(houses$x1*(houses$y-b0-b2*houses$x2-b3*houses$x3-b4*houses$x4))/sigma)+mu11/tau11)/((sum(houses$x1^2)/sigma+1/tau11))
+  variance<- 1/(sum(houses$x1^2)/sigma + 1/tau11) # variance of  Taxes
+  return(rnorm(1, mean= mean, sd= sqrt(variance)))
+}
+
+```
+

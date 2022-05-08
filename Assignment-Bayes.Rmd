@@ -1,0 +1,247 @@
+---
+title: "Bayesian Statistics- Assignment"
+author: "Kalyango Jovan"
+date: "24/02/2022"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+
+
+```{r, message = F, warning = F, include=FALSE}
+library(rjags)
+library(tidyverse)
+library(mvtnorm)
+library(invgamma)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(xtable)
+
+```
+
+## Introduction
+
+```{r, include=FALSE}
+
+set.seed(7014430)
+houses<-read.table("house2.txt",header=TRUE)
+#data <-read.table("house2.txt",header=TRUE)
+head(houses)
+#summary(houses)
+```
+
+
+
+
+```{r, include=FALSE}
+## Houses data
+# Renaming variables in the dataset in terms of y(dependent variable) and Xs( independent variables or predictors or regressors)
+houses$y <- houses$Price # the dependent variable 
+houses$x1 <- houses$Taxes # 
+houses$x2 <- houses$Beds
+houses$x3 <- houses$Baths
+houses$x4 <- houses$Size
+
+frequent_model <- lm(y~ x1 + x2 + x3+x4, data= houses)
+summary(frequent_model)
+
+(summary(frequent_model)$sigma)^2 # residual variance computed from SE^2 
+regressors <- houses %>%
+  dplyr::select(c(x1,x2,x3,x4)) # predictor variables(regressors) extracted 
+regressors <- as.matrix(regressors) # forced to be a matrix
+regressors
+
+#this is the frequentist way of modeling, X4(Size seems the most signficant), while X3(Baths) is not significant. 
+
+```
+
+
+## 1
+# Think about and specify prior distribution for Parameters 
+With no concrete previous information about the effect of variabble or a combination for predicting the price of hous. I will use non-informatitive(uninformative) priors for the regression coefficients of the regressors(predictors) in the dataset(house). Thus, the assumption to be respected is that the predictors are normally distributed. 
+
+
+## 2&3
+## Gibbs Sampler
+The very first step is to define conditional posterior for each of the parameters, then the  assumption is, that the regressors are normally distributed, thus they follow a the distribution, while the residual variance is following inverse gamma. Shape and scale(rate) are $\alpha_{0}$ and $\beta_{0}$ respectively, hyperparameters for priors of regressors are $\mu_{XX}$ and $\tau_{XX}$, where XX represents the parameter i.e., 00,11, 22,33,44. So, I will program the fuctions of each parameter( they are identical) and then these will be incoperated into the gibbs sampler as i will be raping up the question.
+
+# The conditional posteriors 
+
+
+```{r, include=FALSE}
+# the intercept 
+posterr_b0<- function(b1,b2,b3, b4, sigma, mu00, tau00, data){
+  mean <- ((sum(houses$y-b1*houses$x1-b2*houses$x2-b3*houses$x3-b4*houses$x4)/sigma)+mu00/tau00)/(nrow(houses)/sigma + 1/tau00)
+  variance<- 1/(nrow(houses)/sigma + 1/tau00) # variance of intercept 
+  return(rnorm(1,  mean= mean, sd= sqrt(variance)))
+}
+
+```
+
+
+```{r}
+houses
+```
+
+
+```{r, include=FALSE}
+# the Taxes
+posterr_b1<- function(b0,b2,b3, b4, sigma, mu11, tau11, data){
+  mean <- ((sum(houses$x1*(houses$y-b0-b2*houses$x2-b3*houses$x3-b4*houses$x4))/sigma)+mu11/tau11)/((sum(houses$x1^2)/sigma+1/tau11))
+  variance<- 1/(sum(houses$x1^2)/sigma + 1/tau11) # variance of  Taxes
+  return(rnorm(1, mean= mean, sd= sqrt(variance)))
+}
+
+```
+
+
+```{r, include=FALSE}
+# the Beds
+posterr_b2<- function(b0,b1,b3, b4, sigma, mu22, tau22, data){
+  mean <- ((sum(houses$x2*(houses$y-b0-b1*houses$x1-b3*houses$x3-b4*houses$x4))/sigma)+mu22/tau22)/((sum(houses$x2^2)/sigma+1/tau22))
+  variance<- 1/(sum(houses$x2^2)/sigma + 1/tau22)# variance of  Taxes
+  return(rnorm(1, mean= mean, sd= sqrt(variance)))
+}
+
+```
+
+
+
+```{r, include=FALSE}
+# the Baths
+posterr_b3<- function(b0,b1,b2, b4, sigma, mu33, tau33, data){
+  mean <- ((sum(houses$x3*(houses$y-b0-b1*houses$x1-b2*houses$x2-b4*houses$x4))/sigma)+mu33/tau33)/((sum(houses$x3^2)/sigma+1/tau33))
+  variance<- 1/(sum(houses$x3^2)/sigma + 1/tau33) # variance of  Baths
+  return(rnorm(1, mean= mean, sd= sqrt(variance)))
+}
+
+```
+
+
+```{r, include=FALSE}
+# the Taxes
+posterr_b4<- function(b0,b1,b2, b3, sigma, mu44, tau44, data){
+  mean <- ((sum(houses$x4*(houses$y-b0-b1*houses$x1-b2*houses$x2-b3*houses$x3))/sigma)+mu44/tau44)/((sum(houses$x4^2)/sigma+1/tau44))
+  variance<- 1/(sum(houses$x4^2)/sigma + 1/tau44) # variance of  Size
+  return(rnorm(1, mean= mean, sd= sqrt(variance)))
+}
+
+```
+
+
+```{r, include=FALSE}
+posterr_sigma2 <- function(b0,b1, b2, b3,b4, alpha0, beta0){
+  alpha1 <- alpha0 + nrow(data)/2
+  sn <- sum((houses$y-(b0+b1*houses$x1+b2*houses$x2+b3*houses$x3+b4*houses$x4))^2)
+  beta1 <- beta0 + sn/2
+  return(1/rgamma(1,rate = beta1, shape = alpha1))
+}
+
+```
+
+Definition of the propotional conditional posterior for b4,  to be used in MH step. 
+
+```{r, include=FALSE}
+posterr_cond_b4 <- function(data, b0, b1, b2, b3, sigma, mu44, tau44, predvalue){
+  mean<- ((sum(data$x4*(data$y-b0-b1*data$x1-b2*data$x2-b3*data$x1))/sigma)+mu44/tau44)/((sum(data$x4^2)/sigma+1/tau44))#mean 
+  variance <- 1/(sum(data$x4^2)/sigma + 1/ tau44) #variance  of conditional distribution 
+  return(dnorm(x= predvalue, mean = mean, sd= sqrt(variance))) # normal distribtion giving probability of b4 
+  
+}
+```
+
+The next step is to perform MH inside the gibbs sampler 
+```{r, include=FALSE}
+my_MH_gibbs <- function(n, starting_values, burnIn, hyper_params, data){
+  # asigning parameter to be numeric in nature 
+    b0 <-numeric(n)
+    b1<- numeric(n) 
+    b2<- numeric(n)
+    b3<-numeric(n)
+    b4<- numeric(n) 
+    sigma2<- numeric(n)
+  # starting values for every parameter 
+  b0[1]<- starting_values[1]
+  b1[1]<- starting_values[2]
+  b2[1]<- starting_values[3]
+  b3[1]<- starting_values[4]
+  b4[1]<- starting_values[5]
+  sigma2[1] <- starting_values[6]
+  # PRIORS are give as foillows ( they are also called prior hperparameters)
+  mu00<- mu11<- mu22<- mu33<- mu44 <- hyper_params[1]
+  tau00<- tau11<- tau22<- tau33<- tau44 <- hyper_params[2]
+  alpha0 <- hyper_params[3]
+  beta0 <- hyper_params[4]
+  # we use the programed conditional  posterior functions above for each parameter
+  # The for loop moves from the second position, this is because I intend to set a previous value  as the current i-1
+  for(i in 2: n){
+    b0[i]<- posterr_b0(b1[i-1], b2[i-1], b3[i-1], b4[i-1], sigma2[i-1], tau00, mu00,data)
+  
+    b1[i]<- posterr_b1(b0[i],b2[i-1], b3[i-1], b4[i-1], sigma2[i-1], tau11, mu11, data )
+    b2[i]<- posterr_b2(b0[i],b1[i-1], b3[i-1], b4[i-1], sigma2[i-1], tau22, mu22, data )
+    b3[i]<- posterr_b3(b0[i],b1[i-1], b2[i-1], b4[i-1], sigma2[i-1], tau33, mu33, data )
+    b4[i]<- { # this is for the MH step within the gibbs
+      current_b <- b4[i-1] 
+      updated_b <- rnorm(1, b4[i-1], 0) # standard normal 
+      ratio <- (posterr_cond_b4(b0[i], b1[i],b2[i], b3[i], sigma2[i-1], tau44, mu44, predvalue = updated_b, data)/(posterr_cond_b4(b0[i], b1[i],b2[i], b3[i], sigma2[i-1], tau44, mu44, predvalue = current_b, data))) # this is the acceptance ratio
+      if(is.na(ratio)){
+        x= FALSE # the we use i-1 instead  of i 
+        
+      } else {
+        if(runif(1)< ratio){ # runif(1) is drawn  from uniform distribution, used to make a theshold 
+          b4[i]<- updated_b  # if this is not true then we proceede  to cosider the current value otherwise we move to the new or updated b value. 
+        } else {
+          b4[i] <- current_b # if the condition is not achieved we have to mantain the current value 
+        }
+      }
+    }
+    sigma2[i]<- posterr_sigma2(b0[i], b1[i],b2[i], b3[i], b4[i], alpha0, beta0) 
+  }
+  # burn in assigned to NA or NULL for  all parameters, hence removed  
+  b0[1:burnIn] <- b1[1:burnIn] <- b2[1:burnIn]<- b3[1:burnIn] <- b4[1:burnIn]<- sigma2[1:burnIn]<- NA
+  #  the parameters storing
+  
+  
+  as.data.frame(b0=na.omit(b0), b1=na.omit(b1), b2=na.omit(b2), b3=na.omit(b3),
+             b4=na.omit(b4), sigma2=na.omit(sigma2), iteration= seq_len(n-burnIn) )
+  #df_parameter <- na.omit(df)
+  
+  
+}
+```
+
+
+Starting values and priors 
+Chains 1& 2 
+The first chain i am employing the frequentist parameters( from OLS)
+
+```{r, include=FALSE}
+chain1_starting_values <- c(b0_1=49.5714,b1_1=43.6317,b2_1= -45.6994,b3_1=-13.6642,b4_1=1.3552,
+                            sigma_1 =2169.579)# from the frequentist(OLS)
+
+chain2_starting_values <- c(b0_2= 1,b1_2=0.5, b2_2=-3.6, b3_3 = 2.5, b4_2=1.52, sigma_2= 2.5) # arbitrary values 
+# prior unformative choice like my response in Q1 
+
+params <- c( mu= 0, tau= 1000, alpha0= 0.001, beta0= 0.001)
+```
+
+Testing chains separately using my chosen data set, runing iterations n= 50000
+
+```{r}
+#chain1 
+  my_MH_gibbs(n=50000, starting_values= chain1_starting_values, burnIn= 5000, hyper_params= params, data=houses)
+
+#summary(chain1)
+```
+
+
+```{r}
+
+#For example, it is possible to visualize the first 6 rows of seeds using the following instruction: house2[1:6,]. It is also organized as a list: each element of the list corresponds to a variable:
+data
+```
+

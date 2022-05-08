@@ -1,0 +1,503 @@
+---
+title: "Bayesian Statistics"
+author: "Kalyango Jovan (7014430)"
+date: "09-03-2022"
+output:
+  pdf_document: default
+  word_document: default
+  html_document:
+    df_print: paged
+email: j.kalyango@students.uu.nl
+pagenumber: yes
+---
+\pagenumbering{gobble}
+```{r, message = F, warning = F, include=FALSE}
+library(rjags)
+library(tidyverse)
+library(mvtnorm)
+library(invgamma)
+library(ggplot2)
+library(dplyr)
+library(tidyr)
+library(xtable)
+library(mvtnorm)
+```
+
+```{r, include=FALSE}
+houses<-read.table("house2.txt",header=TRUE)
+view(houses)
+set.seed(7014430)
+```
+## Introduction
+The sale price (in thousands of dollars) and the floor size (in squared meters) for a random sample of 27 single-family houses sold in a given town during 2005 are stored in the file house2.txt.In particular, for each house, the file contains:Taxes the amount of property taxes (thousands of dollars), paid by the previous owner during 2004,Beds number of bedrooms,Baths number of bathrooms,Size floor size (squared meters),Price sale price (thousands of dollars).It has a rows-by-columns structure, where each row corresponds to a unit, each column to a statistical variable. Differently from a matrix,it can contain strings, numerical and logical values (thus allowing for the presence of both categorical and numerical variables).The aim of the report is to fit a multiple linear regression model, in order to assess the impact of the four predictors on the sale price.The second research question is aiming to know which of the predictors has a larger impact on the Price of the house. Hence, finding the most important or useful predictor(s). The research questions are to be answered using Bayesian statistical analysis techniques such as Gibb's sampler and metropolis-Hastings algorithm as a data set of my choice fits the analysis type. Furthermore, DIC to assess the better combination of fit(misfit) and complexity of model for the data set. Bayes factor will be used last in this report to test the hypothesis that all the predictors(four) are greater than zero against the alternative hypothesis that one of then of the predictor is zero. This report is represented in form of sections, these include parameter estimation, Convergence, interpretation( these two are connected to parameter estimation), Posterior predictive P-value, model selection, model comparison and conflicting ideas. The last section is going to be on reflecting the difference between the bayesian and frequetist thinking, this will more of a summary of what is going to be done throughout this article. This report is made of mainly programmed functions that i have derived from lecture notes mainly(mainly lecture  number 3) has influenced the gibbs sampler, but i have searched a lot of skeletons of functions in question4( assessing convergence on internet to build my own). The codes to in this report are fitted in exactly 499 lines( this is because the instructions limited me to 500 line), So, for model comparison and selection sections i have tested four models but only one is displayed, but I have labored to add possible adjustments in the corresponding blocks of the code. 
+
+## Parameter Estimation 
+In Bayesian setup, which is used in this report, parameter estimation is done from the imagining the choice of priors to checking of whether there is convergence of the model. For the prior choice, I choose uninformative priors, this is because with no concrete previous information about the effect of variable or a combination for predicting the price of houses( the outcome variable). I will use non-informatitive(uninformative) priors for the regression coefficients of the regressors (predictors) in the dataset(houses). Thus, the assumption to be respected is that the predictors are normally distributed. As a consequence,the resulting estimates will be very similar to what the frequentist regression would yield. This report address an applied case, so, we face a challenge that the multivariate posterior distribution( product of likelihood and priors) reached at has an unknown or a very complicated form and this complicates finding of parameters. To solve this Bayesian approach thinking use MCMC motheds, for this report I programmed a function **m_gibbs**, which follows *Gibbs sampler* and a spacial case of *Metropolis-Hastings*. In detail, to generate posterior samples by moving through each variable (or block of variables) to sample from its conditional distribution with the remaining variables that are fixed to their current values.In this report there is four predictors and total of six parameters to be estimated so,applying the multivariate approach for a Gibbs sampler of multiple linear regression with non-informative priors is the Bayesian technique that is deployed in this report.The linear model is: $y_{i} = x_{i}{\beta} + e_{i}$, where ${e_{i}} = \mathcal{MVN}( {\mu}, \sigma^2 I_{27})$. Here, $\mu$ is a zero-vector with length 5 (the number of predictors, including a 1-vector for the intercept), and $I_{27}$ is a 27-dimensional Identity matrix (where 27 is the number of observations/ houses). The covariance matrix of the distribution of errors is thus a diagonal matrix where the elements on the diagonal $\sigma^2$ are all identical (representing the homoscedastictiy assumption) and the off-diagonal elements are all zero (representing the independence of error assumption).The density of the data, given the model, is:$P(x_{i}, y_{i}|\beta,\sigma^2) = \mathcal{MVN}(\mu = \beta, \Sigma = \sigma^2I_{27})$
+These starting values are completely arbitrary in both chains,they fits my choice of prior, i will take no previous information into consideration with my starting values. The values are going to be used in my function **gibbs_spl** and it is the outer, inside that function there is another one **gibbs_spl_chain**  that goes thrOUgh chains (this is because the gibbs sampler always gives better result with number of chain greater than 1). The estimation is done on more than one variable(four predictors, intercept and residual variance), so i have used matrix algebra to define predictors. To test my Gibbs function mentioned above **gibbs_spl** is stored in another function **m_gibbs** which is used throughout this report to report my estimates. 
+
+```{r, include=FALSE}
+# Gibbs sampler 2
+
+starting_values <- list(
+  chain1 = list(beta = c(0, 4, 1, 6,4), sigma2 = 1),
+  chain2 = list(beta = c(1, -1.5, .5, 2.5, 1.87), sigma2 = 2.5) 
+)
+```
+
+
+```{r, include = FALSE, echo = FALSE}
+#start outer function
+gibbs_spl <- function(formula, n_chain = 2, n_iter = 10000, n_burnin = 1000, 
+                      starting_values, data){
+# start inner function
+gibbs_spl_chain <- function(formula, n_iter = 10000, n_burnin = 1000, 
+                            starting_values, data){
+  # extract outcome 
+  y <- model.frame(formula, data)[, 1]
+  # extract model matrix 
+  terms <- terms.formula(formula)
+  X <- model.matrix(terms, data)
+  # pre-calculations
+  XX_t <- t(X)%*%X
+  XX_t_i <- solve(XX_t)# predictors/ regressors 
+  beta_ml <- solve(XX_t, t(X) %*%y)## betas 
+  n <- nrow(data)
+  # memory for output
+  parameters <-  matrix(NA, nrow = (n_iter + n_burnin), ncol =  ncol(X)+1)
+  #  starting values
+  beta <- starting_values$beta
+  sigma2  <- starting_values$sigma2
+  # sampling from conditional posterior
+  for (i in 1:(n_iter+n_burnin)){
+    beta <- MASS::mvrnorm(n = 1, beta_ml, sigma2 * XX_t_i)
+    sigma2 <- 1/ rgamma(1, shape = n/2, rate = t(y-X%*%beta)%*%(y-X%*%beta) *.5)
+    ## save output
+    parameters[i, 1:ncol(X)] <- beta
+    parameters[i, ncol(X)+1] <- sqrt(sigma2) # transform variance into sd to resemble freq. mlr
+  }
+  # recode burnin samples to NA & remove
+  parameters[1:n_burnin, ] <- NA
+  parameters <- na.omit(as.data.frame(parameters))
+  colnames(parameters) <-  c(sapply(0:(ncol(X)-1), function(x)(paste("b", as.character(x), sep = ""))), "sigma")
+  return(parameters)
+}
+#  outer function again
+output_spl <- list()
+out<- for (i in 1:n_chain){      
+# apply sampling for each chain
+  output_spl[[i]] <- gibbs_spl_chain(formula = formula, n_iter = n_iter, n_burnin = n_burnin, starting_values = starting_values[[i]], data = houses)
+  out <- data.frame()
+}
+# the final output
+ for(i in 1:length(output_spl)){
+    output_spl[[i]]$chain <- i
+  }
+  for(i in 1:length(output_spl)){
+    out <- rbind(out, output_spl[[i]])
+  }
+# return final output
+return(out)
+}
+```
+
+To test the function, I set chains to 2 chains, model(formula) as it would be in lm format(full model), burnin set at 1000, number of iterations equal to 10000.
+```{r, include = FALSE, echo = TRUE}
+set.seed(7014430)
+m_gibbs   <- gibbs_spl(formula = Price ~ Taxes+Beds+Baths+Size,
+                  n_chain = 2,
+                  n_iter = 10000, 
+                  n_burnin = 1000, 
+                  starting_values, 
+                  data = houses)
+
+m_gibbs
+```
+For, the metropolis-hastings(MH) a function is programmed to specifically respond to the third question in this report, it is  worth noting that the algorithm is a general case of Gibbs sampler, and in the applied case at hand, i have decided to include only size as my predictor, and the most impontant output to look at is the acceptance rate, if the rate is near 1, it means the we have not reached optimal rate as it is argued by different pieces of evidence, the optimal rate is between 20% to 30%, in this case I get $0.98$. In the function **run_metropolis_MCMC**, **posterior**  function is  defined as sum of functions: **prior** and **likelihood**, to sample from the posterior density.The target function **proposalfunction** aims to jump around parameter space. 
+```{r, include=FALSE}
+# 3.Include a Metropolis-Hastings step for at least one parameter
+#how to run a Metroplios_ Hastings  from Gibbs 
+## load the data set we have to use in this case( only Size as my predictor)
+house1 <- read.table("house2.txt",header=TRUE)# am interested to perform a simple linear regreesion equivalent
+# the model to compare with 
+model1 <- lm(house1$Price~., data = house1) # it gives what is computes the true values 
+trueSd <- sqrt(var(house1$Price)) 
+sampleSize <- 27
+trueA <- -79.24
+trueB <- 1.69
+trueSd <- sqrt(var(house1$Price)) 
+x <- house1$Size # create x-values, which is Size
+y <- house1$Price # the dependent variable 
+## Likelihood 
+likelihood <- function(param){
+  a = param[1]
+  b = param[2]
+  sd = param[3]
+  pred = a*x + b
+  singlelikelihoods = dnorm(y, mean = pred, sd = sd, log = T)
+  sumll = sum(singlelikelihoods)
+  return(sumll)    
+}
+# plot the likelihood profile of the slope 
+slopevalues <- function(x){return(likelihood(c(x, trueB, trueSd)))}
+slopelikelihoods <- lapply(seq(-500, 500, by=.05), slopevalues )
+# Prior distribution
+prior <- function(param){
+  a = param[1]
+  b = param[2]
+  sd = param[3]
+  aprior = dunif(a, min=0, max=20, log = T)
+  bprior = dnorm(b, sd = 5, log = T)
+  sdprior = dunif(sd, min=0, max=30, log = T)
+  return(aprior+bprior+sdprior)
+}
+#The product of prior and likelihood 
+posterior <- function(param){
+  return (likelihood(param) + prior(param))
+}
+# Metropolis algorithm 
+proposalfunction <- function(param){
+  return(rnorm(3,mean = param, sd= c(0.001,0.005,0.003)))
+}
+run_metropolis_MCMC <- function(startvalue, iterations){
+  chain = array(dim = c(iterations+1,3))
+  chain[1,] = startvalue
+  for (i in 1:iterations){
+    proposal = proposalfunction(chain[i,])
+    probab = exp(posterior(proposal) - posterior(chain[i,]))
+    if (runif(1) < probab){
+      chain[i+1,] = proposal
+    }else{
+      chain[i+1,] = chain[i,]
+    }
+  }
+  return(chain)
+}
+
+yo<-run_metropolis_MCMC(startvalue = c(0,4,20),100000)
+startvalue = c(0,4,20)
+chain = run_metropolis_MCMC(startvalue, 100000)
+burnIn = 5000
+acceptance = 1-mean(duplicated(chain[-(1:burnIn),])) # this rate is reasonably high( closed to 1)
+
+```
+
+To sum up the function, the estimates are visualized in **Figure 1**. The upper row shows posterior estimates for slope (*a*), intercept (*b*) and standard deviation of the error(*sd*). The lower row shows the Markov Chain of parameter values.
+```{r, echo=FALSE, fig.width=10, fig.height=4, fig.cap= "Posterior and Chain values of parameters", fig.align='center'}
+par(mfrow = c(2,3))
+hist(chain[-(1:burnIn),1],nclass=40, main="Posterior of a", xlab="True value = blue line" )
+abline(v = mean(chain[-(1:burnIn),1]), col="blue")
+abline(v = trueA, col="blue" )
+hist(chain[-(1:burnIn),2],nclass=40, main="Posterior of b", xlab="True value = blue line")
+abline(v = mean(chain[-(1:burnIn),2]),col="blue")
+abline(v = trueB, col="blue" )
+hist(chain[-(1:burnIn),3],nclass=40, main="Posterior of sd", xlab="True value = blue line")
+abline(v = mean(chain[-(1:burnIn),3]),col="blue")
+abline(v = trueSd, col="blue" )
+plot(chain[-(1:burnIn),1], type = "l", xlab="True value = blue line" , main = "Chain values of a" )
+abline(h = trueA, col="blue" )
+plot(chain[-(1:burnIn),2], type = "l", xlab="True value = blue line" , main = "Chain values of b")
+abline(h = trueB, col="blue" )
+plot(chain[-(1:burnIn),3], type = "l", xlab="True value = blue line" , main = "Chain values of sd")
+abline(h = trueSd, col="blue" )
+
+```
+
+## Convergence
+
+The convergence of model is assessed by known procedures, including *Trace plots*, *Density plots*, *autocorrelation*, *Gelman and Rubin statistics*, and *naive error* using both Table 1 (*Gelman and Rubin statistics*, and *naive error*) and figures( 2 to 4) I display or check the convergence of the model parameters, what is must state is that for  this section I have used information given by the **m_gibbs** as the data set contains all the predictors.
+
+*Trace plots*
+
+Trace plots **Figure 2** show that they follow the desired form that resembles ' caterpillar' for all the parameters   display the caterpillar like shape. This indicates that the parameters converged at the same joint posterior distribution of the model parameters.If this was not case we could, we can increase the number of iterations or introduce centering of the parameters around their means to in order the parameters to converge, but in this case there is no need to do that.
+```{r, include=TRUE, fig.cap="Traceplots of Model Parameters", echo=FALSE, fig.width=10, fig.height=3, fig.align='center'}
+par(mfrow = c(2, 3))
+for(i in 1:6){
+plot(m_gibbs[m_gibbs$chain == 1, i], type = "l",
+     xlab = colnames(m_gibbs[-ncol(m_gibbs)])[i],
+     ylab = "value")
+lines(m_gibbs[m_gibbs$chain == 2, i], col = "blue", 
+      ylab = "value")
+}
+```
+
+*Density plots*
+
+Density plots **Figure 3**, which indicated that our the parameters are as desired, normally distributed around their expected a priori (EAP) accept the 6th parameter that is slightly display left skewness but still the shift deviates within the credible interval.The blue vertical lines indicate the lower and upper bounds of the Predictive Credible Interval and all parameters in the model are within the intervals. 
+```{r, include=TRUE,  fig.cap="Density Plots of Model Paramters", echo=FALSE, fig.align='center', fig.width=10, fig.height=3}
+par(mfrow = c(2, 3))
+for(i in 1:6){
+plot(density(m_gibbs[, i]), main = "", xlab = colnames(m_gibbs[-6])[i])
+abline(v = c(quantile(m_gibbs[,i], .025), quantile(m_gibbs[,i], .95)), col = "blue")
+}
+```
+
+*Autocorrelation*
+
+I computed the autocorrelation of the model parameters per chain. The plots of the autocorrelation from lag0 to lag1000 of chain 1 are displayed in **Figure 4**. The autocorrelation of the second chain are approximately the same and can be inspected using the `acfm()` function that I have programmed, with two main inputs model and n_lags(set to 1000).
+The autocorrelation converge to zero immediately at the first lag for all parameters. This indicates rapid mixing. Hence, the sampler not only appears to have reached the joint posterior distribution, but it also appears to move through it in an efficiently. Because of this, subsequent values show independence from one another.
+```{r, include=FALSE}
+acfm <- function(model, n_lags = 1000){
+  n_par <- ncol(model) - 1
+  n_chain <- length(unique(model$chain))
+  n_lags 
+  autocors <- list()
+  length(autocors) <- n_chain
+  for (i in 1:n_chain){
+    autocors[[i]] <- data.frame()
+    for (j in 1:n_par){
+        par <- model[model$chain == i,j]
+        for (k in 1:n_lags){
+        par_t0 <- numeric(length(par)-k)
+        par_t1 <- numeric(length(par)-k)
+        par_t0 <- par[1:(length(par)-k)]
+        par_t1 <- par[(k+1):length(par)]
+        #return(c(length(par_t0), length(par_t1)))
+        autocors[[i]][j, k] <- cor(par_t0, par_t1)
+      }
+
+        }
+        autocors[[i]] <- cbind(1, autocors[[i]])
+        colnames(autocors[[i]]) <- sapply((0:n_lags+1), function(x)(paste("lag", as.character(x), sep = " ")))
+  }
+  return(autocors)
+}
+```
+
+```{r, include=FALSE}
+acfm_chain1 <- t(acfm(m_gibbs)[[1]])
+colnames(acfm_chain1) <- c("b0", "b1", "b2", "b3","b4", "sigma") ## naming columns 
+autocor_chain2 <- acfm(m_gibbs)[[2]] 
+```
+
+```{r, include = TRUE, fig.cap="Autocorrelation Plots of Chain 1", echo=FALSE, fig.align='center',fig.width=10, fig.height=4}
+par(mfrow = c(3, 2))
+for (i in 1:6){
+    plot(acfm_chain1[,i],  ylab = paste( "autocorrelation",  colnames(m_gibbs[-ncol(m_gibbs)])[i]), type = "l", xlab = "lag")
+}
+```
+
+*Gelman and Rubin statistics*
+
+The function **gelman_rubin**, compare variance within chain(s) to total pooled variance, has input as model, the chain to be used is specified , in this function, the inner function **gelman_rubin_inner** has more inputs: para(*parameters*), m( length of the chain but eliminates the any repetitions), n( number of rows as a specified chain). The Gelman and Rubin statistics of all parameters were equal to 1 for example, b3 and b4. This suggests that there were no issues with convergence,hence, the parameters are independent.
+
+```{r, include=FALSE}
+gelman_rubin <- function(model){
+  m <- length(unique(model$chain))
+  n <- nrow(model[model$chain == 1,])
+# write  function to compute R 
+gelman_rubin_inner <- function(para, model, m, n){
+  var_within <- 0
+  sums <- 0
+  for(i in 1:m){
+  x_bar <- mean(model[model$chain == i, colnames(model) == para])
+   var_within <- var_within + var(model[model$chain == i, colnames(model) == para])
+   x_grand <- mean(model[, para])
+   sums <- sums + (x_bar - x_grand)^2
+  }
+  var_between <- n/(m-1) * sums
+  var_total <- (n-1)/n * var_within + (1/n)*var_between
+  R <- sqrt(var_total/var_within)
+  return(R)
+}
+# apply function to all parameters in model
+  parameter_names <- colnames(model)[-ncol(model)]
+   output <- numeric(length(parameter_names))
+   names(output) <- colnames(model)[-ncol(model)]
+  for (i in 1:length(parameter_names)){
+    output[i] <- gelman_rubin_inner(parameter_names[i], model, m, n)
+  }
+return(output)
+}
+gelman_rubin_stat <- gelman_rubin(m_gibbs)
+gelman_rubin_stat
+```
+
+*Naive error*
+
+In the dataset there are some MC errors which are larger than 5% of the sample standard deviations(largest is 39.5% of intercept), which indicates that there are is issues with convergence.
+```{r, include=FALSE}
+mc_error <- function(model){
+  n_par <- ncol(model)-1
+  mcerror <- numeric(n_par)
+  pars <- colnames(model[-ncol(model)])
+  for (i in 1:ncol(model[, -ncol(model)])){
+    mcerror[i] <- sd(model[, pars[i]])/ sqrt(nrow(model*2))
+    names(mcerror) <- colnames(model[-ncol(model)])
+}
+  return(mcerror)
+}
+mc_err <- mc_error(m_gibbs)
+mc_err
+```
+In conclusion, most of the procedures could not find evidence that there were issues with convergence accept for the naive error MCMC. However, we cannot find proof that the sampler(Gibbs) did converge at the right posterior distribution(non-informative priors were used).
+
+## Interpretation
+
+To interpret the parameter estimates, in this report i refer to **Table 1** and for the credible interval **Table 2** is referred to. The posterior parameter  of the intercept(**b0**) is **50.674** in Table 1, corresponds to a credible interval(*CI*) between $[-59.192 , 160.975]$ in Table 2, meaning based on the data, I believe that the probability of the intercept being in the mentioned *CI* is **95%**, hence it is not different from zero. Predictors that are not different from zero according to my belief are **b2** and **b3** see Tables( 1 and 2). For, **b4** Size, the posterior parameter is **1.353** in Table 1 has a *CI* of $[0.850 ,1.863]$ in Table 2, lead to conclusion that based on my belief the probability of the coefficient to be within the *CI* above is **95%**, thus, this is different from zero and on average a unit increase in *Size* of the house, leads to **1.353** unit increase in *Price* of the house. This is the same interpretation used for both **b1** and **sigma** that are different from zero with a probability of **95%** to be found in the credible interval. The parameter estimates, which were derived by computing the mean and standard deviations of the posteriors of the two chains combined ($N = 20,000$) are displayed in **Table 1**, their corresponding credible interval is showed in **Table2 **
+```{r, include=TRUE, echo=FALSE}
+set.seed(7014430)
+summary_pars <-
+      m_gibbs%>% 
+      select(b0:sigma) %>% 
+      summarise(EAP = sapply(., mean),
+                SD = sapply(.,sd)
+)
+rownames(summary_pars) <- c("b0", "b1", "b2", "b3", "b4" ,"sigma")
+knitr::kable(t(cbind(round(summary_pars, 3), `Gelman Rubin` = round(gelman_rubin_stat, 3), `MC error` = mc_err)), caption = "Parameter Estimates")
+```
+
+
+```{r, include=TRUE, echo=FALSE}
+set.seed(7014430)
+
+summary_quantiles <-
+      m_gibbs%>% 
+     select(b0:sigma) %>% 
+      summarise(`2.5%` = sapply(., quantile, 0.025),
+                `25%` = sapply(., quantile, 0.25),
+                `50%` = sapply(., quantile, .5),
+                `75%` = sapply(., quantile, .75),
+                `97.5%` = sapply(., quantile, .975))
+rownames(summary_quantiles) <- c("b0", "b1", "b2", "b3", "b4", "sigma")
+knitr::kable(round(summary_quantiles, 3), caption = "Posterior Quantiles")
+```
+
+# Posterior Predictive P-value
+
+An important assumption of multiple linear regression is that the residuals of my model are normally distributed. In order to test the hypothesis, a posterior predictive check is conducted in this report through **steps** ( 1 to 5). In step 1: the null-hypothesis is specified, which is residuals of the model are normally distributed, is formally specified as:$Y_{i} = X_{i}{\beta} + e_{i}$.Step 2: Sampling from the posterior distribution of the model parameters is done, where , sample parameters($\theta$), i.e. $\beta$ and $\sigma^2$ 10,000 times, using my `gibbs_spl` function.
+
+```{r, include=FALSE}
+theta <- gibbs_spl(formula = Price ~Taxes + Beds + Baths+ Size,
+                  n_chain = 2,
+                  n_iter = 10000, 
+                  n_burnin = 1000, 
+                  starting_values, 
+                  data = houses)[-7]
+
+```
+In step 3: the Posterior Predictive Distribution is generated and each of sampled values of current parameters($\theta$ ) from $\theta_1$ to $\theta_{10,000}$ are used to simulate data, by using the linear predictor, $X$ is fixed. Thus,10,000 datasets simulated, where $\hat{Y}_t = \beta_tX$. We thus end up with:$[\hat{Y}_1, X], [\hat{Y}_2, X], ..., [\hat{Y}_{10000}, X]$
+```{r, include=FALSE}
+# extract outcome 
+y <- model.frame(formula = Price~Taxes+Beds+Baths+Size, houses)[, 1]
+# extract model matrix 
+terms <- terms.formula(Price~Taxes+Beds+Baths+Size)
+X <- model.matrix(terms, houses)
+# simulate data
+output <- list()
+for (i in 1:10000){
+  y_hat  <- X%*%as.matrix(t(theta[i, -6]))
+  output[[i]] <- cbind(y_hat = y_hat, X)
+  colnames(output[[i]])[1] <- "y_hat"
+}
+```
+Step 4: choosing a discrepancy measure.A suitable test statistic to assess deviation from normality the absolute difference of the mean and median of the error: $D = |\bar{e} - \tilde{e}|$. From step1 the Null-Hypothesis that the residuals are normally distributed, this parameter should be distributed normally around zero. The residuals are computed first, as $e_t = X\beta_t$ and then the test-statistic $D_t= |\bar{e_t} - \tilde{e_t}|$.The *discrepancy measure*, depends on varying part, the posterior model parameters $\theta_t$ **and** a fixed part, the data $X$. 
+
+```{r, include=FALSE}
+e <- list()
+t <- numeric(10000)
+for (i in 1:10000){
+  e[[i]] <- as.vector(output[[i]][, "y_hat"]) - y
+}
+```
+
+
+```{r, include=FALSE}
+D <- numeric(10000)
+for (i in 1:10000){
+  D[i] <- abs(mean(e[[i]])- median(e[[i]]))
+}
+```
+In Step 5, the *posterior-predictive (Bayesian) p-value* is compute, as:$p = P(D([Y_t, X], \theta_t) > D([Y, X], \theta_t) | [Y, X], H0)$, this represents the proportion of *discrepancy-measures*in the simulated data under the Null-Hypothesis were larger than the *discrepancy-measure* in the observed data. A p-value of *0.54* would suggest that my approximately half of the discrepancy measure that were generated using a posterior fall . This means, that in the  posterior predictive distribution, an absolute difference between the mean and the median of 0 is representative, which larger differences  becoming less and less likely. Therefore, a posterior predictive p-value of approximately 0.50 indicate that the residuals of my model are normally distributed. The findings are displayed in **Figure 5** see in Rmarkdown.
+
+```{r, include=FALSE}
+mean_beta <- sapply(theta[-ncol(theta)], mean)
+y_hat_obs <-  X%*%as.matrix((mean_beta))
+e_obs <- y_hat_obs - y
+D_obs <- abs(mean(e_obs) - median(e_obs))
+p <- mean(ifelse(D > D_obs, 1, 0))
+p
+```
+
+```{r, include=F, fig.height=2, fig.width=3, fig.cap="Histogram of distribution of discrepancy measures", echo=FALSE}
+hist(D, main = "Discrepancy measures")
+abline(v = D_obs, col = "blue") #$p = 0.5343$. 
+```
+# Model Selection-DIC
+
+```{r, include=FALSE}
+dic <- function(formula, data, n_iter, starting_values){
+  m <- gibbs_spl(formula = formula, n_chain = 2,   n_iter = n_iter, n_burnin = 1000, starting_values = starting_values, data = data)
+  samp <- m[, -ncol(m)]
+# construct likelihood given mean theta # extract model matrix 
+  terms <- terms.formula(formula)
+  X <- model.matrix(terms, data)
+  beta <- sapply(samp[, 1:(ncol(samp)-1)], mean)
+  # extract outcome
+  y <- model.frame(formula, data)[,1]
+  # compute predicted values
+  y_hat <- as.matrix(X %*% beta)
+  # d_hat
+  d_hat <-  -2*sum(dnorm(x = y, mean = y_hat, sd = mean(samp$sigma), log = TRUE))
+  # dbar
+  l <- numeric(nrow(samp))
+  for (i in 1:nrow(samp)){
+    y_hat <-   X%*%t(as.matrix(samp[i,-ncol(samp)]))
+    l[i] <- -2*sum(dnorm(y, mean = y_hat,
+                          sd = (samp$sigma[i]), log = T))
+  }
+  # compute dbar, pd * dic
+  d_bar <- mean(l)
+  pd <- d_bar - d_hat
+  dic <- d_hat + 2*pd
+  # return output
+  return(round(data.frame(mean_deviance = d_hat, 
+                    complexity = pd,
+                    dic = dic), 3))
+}
+```
+
+```{r, interval=F, echo=FALSE, include=FALSE, echo=FALSE}
+dic(formula = Price~Taxes+Beds+Baths+Size, ## this is used to test other models 
+#formula =Price~Taxes+Beds+Baths,  #formula =Price~Taxes+Beds*Size , #formula =Price~Taxes+Beds+Size
+    data = houses, 
+    n_iter = 10000,
+    starting_values)
+```
+The dic function, which is more like a calculator suggests that a model without baths has the lowest value($DIC =289.384$),this implies that a combination of three parameters[taxes, sizes and beds] produce the best model. but the difference in *dic* of this model and the one that has all the four predictors($DIC =291.119$) is less than 2, so with that in mind, am skeptical if indeed the baths did not affect the price. So, for future research it should be investigated, it should be kept as a predictor. I know that *DIC* is a Bayesian information criteria used to evaluate model fit or misfit, this is done by evaluating both model deviance and complexity. I would like to add a table in my report but the space is limited and I have compared four models with **dic** but due to space i have only added the other 3 as comments, so by adjusting the comments the models can be compared using *dic*. 
+
+# Model comparison- Bayes Factor
+
+Bayes factor as the change from the prior  to the posterior odds: $BayesFactor=P(Posterior)/P(Prior)=0.37$ This BF indicates that the data provide $1/0.37 = 2.7$ times more evidence for including all the predictors being included all affect the sale price, practically nothing than they do for the Price having some statistically significant effect. Thus, although the center of distribution has shifted away from 0, and the posterior distribution seems to favor a non-null effect of the predictor, it seems that given the observed data(*houses*), the probability mass has overall shifted closer to the null interval, making the values in the null interval more probable, hence 
+```{r, include=FALSE, echo=FALSE}
+BF_function <- function(model, data){ 
+  #linear model and parameters 
+  l_model <- lm(model,data)
+  Sigma <- vcov(l_model)[-1,-1] # this is adjusted according to the number of predictors in the model # [-2,-2], [-3, -3] and [-4, -4] -->model = Price~ Beds +Baths + Size) --> model = Price~Baths + Size
+# and --> model = Price~Size  
+  Maxlik<-coef(l_model)[-1] # we follow the choice of predictors to be eliminated [-2], [-3] and [-4]
+  j <- length(Maxlik)
+  # bayes factor 
+  Posterior<-pmvnorm(lower=rep(0,j), upper=rep(Inf,j), mean=Maxlik, sigma=Sigma)
+ Prior<-pmvnorm( lower=rep(0,j),upper=rep(Inf,j),mean=rep(0,4),sigma=Sigma/(4/nrow(data)))# the mean and sigma of the prior is to be adjusted  in accodance with  the predictors in the model -->> rep(0,3), sigma/(3/nrow(data)) -->> rep(0,2), sigma/(2/nrow(data)) -->> rep(0,1), sigma/(1/nrow(data)) 
+Bayesfactor<-Posterior[1]/Prior[1]
+return(Bayesfactor)
+  }
+BF_function(model = Price~Taxes + Beds +Baths + Size , data = houses) 
+## 0.9743574 -->> 0.0009273016 -->> 0.02455701, these results from other models i thought of after making the highlighted adjustments 
+# comparison in bayes
+```
+Since all the BF of less than one i.e, $BF<1$, this indicates that  contains values whose credibility has not been impressively decreased by observing the data. Testing against values outside this interval will produce a Bayes factor larger than 1/BF in support of the alternative(s). But to choose the best model, we look at the value of the function **BF_function**. I have computed, I conclusion that Baths and Size of the house influences the price more, hence more useful predictors. 
+
+## Frequentist Vs Bayesian 
+There are two schools of statistical inference: Bayesian and frequentist. Both approaches allow one to evaluate evidence about competing hypotheses. I will finalize this report by reviewing and comparing the two approaches, starting from 
+Prior, this is a requirement in Bayesian setup but not in Frequentist, however, when the used priors are non-infotmative the estimates will be very close or hard to differentiate from Frequentist estimates. 
+Interpretation of estimates and the credible interval(question 6), is a consequence of the idealogical or philosophical differences,in Bayesian parameters are random variables while in Frequentist they are fixed in the population and point estimation is a used procedure to estimate parameter(s). For confidence interval and credible interval( Bayesian), confidence is expressed in terms of repeated sampling from the population, but credible is interpreted as a probability of a given estimate to be laying within it or not. Bayesian framework, for model misfit deployes DIC instead of AIC which is used in Frequentist to do the same job. Model comparison in Bayesian setup is done by means of BF, this quantify null hypothesis under investigation not only two, but multiple and updating is done( Bayesian Updating) which is not possible in Frequentist setup. 
+
+**References**
+
+*I have Used last year's group discussions I had with colleagues( so if some of my wording sound like theirs it is because of the highlighted reason) and notes but also general statistics formulaes more in Posterior p-value and MH sections.Futhermore, I have been constrained by the requested space( 6 pages), My functions are mainly inspired by formulaes*
+
+*Andrieu, C.; de Freitas, N.; Doucet, A. & Jordan, M. I. (2003) An introduction to MCMC for machine learning Mach. Learning, Springer, 50, 5-43*
+
+
+
