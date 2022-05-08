@@ -1,0 +1,30 @@
+# Bayesian Statistics - Exercise 3 Model file
+# multiple regression analysis
+
+# Including an interaction term
+
+model{ 
+
+ # likelihood of the data
+ for (i in 1:240){
+  postnumb[i] ~ dnorm(mu[i], tau)
+  mu[i] <- b[1] + b[2] * c.prelet[i]  + b[3] * c.prenumb[i] + b[4] * interaction[i]
+  c.prelet[i] <- prelet[i] - mean(prelet[])
+  c.prenumb[i] <- prenumb[i] - mean(prenumb[])
+  interaction[i] <- c.prelet[i] * c.prenumb[i]
+ } # end loop over persons
+
+ # priors
+ tau ~ dgamma(0.001, 0.001)
+
+ for (v in 1:4) {
+  b[v] ~ dnorm(0, 0.0000001)		
+ } # end loop over coefficients
+
+ # calculate other quantities of interest
+ sigma2 <- 1/tau
+ sigma <- sqrt(sigma2)
+ sum <- b[2]+b[3]
+
+ } # end 
+

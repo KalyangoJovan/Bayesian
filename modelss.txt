@@ -1,0 +1,18 @@
+model{ 
+
+# likelihood 
+for(i in 1: length(postnumb)){
+postnumb[i]~ dnorm(mu[i], tau)
+mu[i]<- b0 + b1*sex[i]
+
+}
+
+# priors 
+b0 ~ dnorm(0, 0.0001)
+b1 ~ dnorm(0, 0.0001)
+tau ~ dgamma(0.001, 0.001)
+
+# output
+sigma <- 1/tau
+cohensd <- b1/sigma
+}

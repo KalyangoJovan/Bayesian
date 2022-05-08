@@ -1,0 +1,17 @@
+# this is JAGS model specification
+model{
+## likelihood#
+for(i in 1: 240){
+postnumb[i]  ~ dnorm(mu[i], tau)
+mu[i] <- alpha + beta*sexDummy[i]
+ }
+
+#prior
+alpha  ~ dnorm(0,0.0001)
+beta  ~  dnorm(0, 0.0001)
+tau  ~ dgamma(0.001, 0.001)
+
+## output
+sigma <- 1/ sqrt(tau)
+cohensd <- beta/sigma
+}
