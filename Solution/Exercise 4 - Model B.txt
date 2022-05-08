@@ -1,0 +1,26 @@
+# Bayesian Statistics - Exercise 4 Model file
+# fitting the model to the raw data, and conducting a posterior predictive check
+
+# Bayesian Statistics - Exercise 4 Model file
+# logistic regression analysis, and predicting the outcome of two new patients
+
+model{
+
+ # likelihood of the data
+for (i in 1:N) {
+depr[i] ~ dbern(prob[i])  # equivalent: depr[i] ~ dbin(prob[i], 1)
+prob[i] <- exp(a + b1 * gender[i]) / (1 + exp(a + b1 * gender[i]))  
+# logit(prob[i]) <- (a + b1 * gender[i]) # equivalent formulation, gives equal results. 
+# prob[i] <- ilogit((a + b1* gender[i])) # should be equivalent, but wrong results!
+}
+   
+ # prior distributions for the intercept and regression coefficient(s)
+a ~ dnorm(0, 0.01)
+b1 ~ dnorm(0, 0.01)
+
+ # calculate other quantities of interest
+odds.ratio <- exp(b1)
+
+}
+
+

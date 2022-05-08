@@ -1,0 +1,27 @@
+
+model{ 
+# likelihood 
+for( i in 1: 172){
+
+attitude[i] ~ dnorm(mu[i], tau)
+
+mu[i] <- b[1] + b[2]*agreeable[i] + b[3]*extraversion[i]
+}
+
+# priors 
+
+b[1]  ~ dnorm(0, 0.00001)
+b[2]  ~ dnorm(0, 0.00001)
+b[3] ~ dnorm(0, 0.00001)
+
+tau  ~ dgamma(0.001, 0.001)
+
+# output
+
+out[1] <- b0
+out[2] <- b1
+out[3] <- b0+b1
+out[4] <- 1/tau
+out[5] <- b0/b1
+
+}
