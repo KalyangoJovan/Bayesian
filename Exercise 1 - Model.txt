@@ -1,0 +1,17 @@
+# Bayesian Statistics - Exercise 1 Model file
+
+# Cognitive behavioural therapy for PTSD: Is PE more effective than the baseline PC?
+
+model{
+
+# likelihood of the data
+
+# prior distributions
+
+# contrast
+
+}
+    
+
+
+

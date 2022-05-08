@@ -1,0 +1,118 @@
+---
+title: "Exercise1"
+author: "Kalyango Jovan"
+date: "18/02/2022"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Objectives 
+Practicing with rjags, a package to enables us work with JAGS(Just Another Gibbs Sampler) in R, JAGS is a program for analysis of Bayesian hierarchical models using Markov Chain Monte Carlo(MCMC) simulation. 
+
+# System setup
+install the current JAGS version
+install rjags package from CRAN
+
+#Step1: The data
+
+Several studies suggest that cognitive behavioral therapy is an effective treatment for Post-Traumatic
+Stress Disorder (PTSD) in male veterans. Suppose that you did a study to compare Prolonged
+Exposure (PE), a type of cognitive behavioral therapy, with Present-Centered therapy (PC), a
+supportive intervention. It was a randomized controlled trial, where 284 veterans suffering from
+PTSD were assigned randomly to receive either PE or PC. The outcome measure of interest was
+loss of diagnosis (LD), a dichotomous variable. The resulting data are displayed in Table ??.
+# Step1 Read data
+
+```{r}
+# You can specify the data in this manner:
+dat <-list(y.PE=58, n.PE=141, y.PC=40, n.PC=143)
+
+#this will be useful when using bigger datasets later on.
+
+```
+
+# OR
+```{r}
+library('rjags')
+source('DataExe1.txt')
+```
+
+# step 2: Specify the model
+
+This step is done is a notepad file with an extention .txt
+
+# C. Step 3: Obtain initial values.
+For this particular model, it is not necessary to provide any initial values manually. JAGS automatically generates initial values when the model is specified, and no initial vales are provided.
+These are chosen to be a typical value from the prior distribution.
+
+#D. Step 4: Obtain samples from the posterior distribution of the parameters.
+For the next steps in the analysis you will run JAGS from R using the rjags package. First load
+
+```{r}
+library(rjags)
+```
+
+
+Next, create a model object in R by means of the jags.model function. We need to specify
+a model .txt-file, data and number of chains:
+```{r}
+model.def <- jags.model(file = "Exercise1Model.txt", data = dat, n.chains = 2)
+```
+
+Subsequently, use the update() function to run a large number of burn-in iterations (for example
+1000 iterations) for your model:
+```{r}
+# burn-in period :
+update(object = model.def, n.iter =1000 )
+
+```
+ 
+Then, use the *coda.samples()* function to set monitors on the parameters of interest and draw
+a large number of samples from the posterior distribution, (for example 10000):
+obtain samples from the posterior distribution of the parameters and monitor these:
+
+```{r}
+parameters <- c('theta.PE', 'theta.PC', 'RR')
+res <- coda.samples(model = model.def, variable.names = parameters, n.iter = 10000)
+summary(res)
+```
+
+# Interpretation
+
+The posterior mean is **0.69**, CI is $[0.49,0,94]$, lie below 1, thus we are certain or believe that **PE** therapy gives a higher change of recovery than **PC** therapy. Since, posterior mean of PC is **0.28** with Central Credible Interval is $[0.21,0,36]$, laying below 1, and posterior mean of PE is **0.41** with Central Credible interval is $[0.33, 0.49]$. 
+
+# Comparing the non-informative priors and informative prior( historical data)
+
+The first historic data to compare with is Ronald's data, so in the model step we change the priors, in the notepad. 
+
+a model .txt-file, data and number of chains:
+```{r}
+model.def <- jags.model(file = "Exercise2Model.txt", data = dat, n.chains = 2)
+```
+
+Subsequently, use the update() function to run a large number of burn-in iterations (for example
+1000 iterations) for your model:
+```{r}
+# burn-in period :
+update(object = model.def, n.iter =1000 )
+
+```
+ 
+Then, use the *coda.samples()* function to set monitors on the parameters of interest and draw
+a large number of samples from the posterior distribution, (for example 10000):
+obtain samples from the posterior distribution of the parameters and monitor these:
+
+```{r}
+parameters <- c('theta.PE', 'theta.PC', 'RR')
+res <- coda.samples(model = model.def, variable.names = parameters, n.iter = 10000)
+summary(res)
+```
+
+# Interpretation
+
+The posterior mean is **0.79**, CI is $[0.62,0,99]$, lie below 1, thus we are certain or believe that **PE** therapy gives a higher change of recovery than **PC** therapy. Since, posterior mean of PC is **0.31** with Central Credible Interval is $[0.25,0,37]$, laying below 1, and posterior mean of PE is **0.34** with Central Credible interval is $[0.34, 0.46]$.The 95% CCIs of the RR are smaller, and still do not include 1. Therefore, the RR is still in favor of PE, but less strongly than with uninformative priors. 

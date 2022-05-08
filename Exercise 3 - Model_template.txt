@@ -1,0 +1,19 @@
+# Bayesian Statistics - Exercise 2 Model file
+# fitting the model to the raw data, and conducting a posterior predictive check
+
+model {
+ # Likelihood of the data 
+ for (i in 1:n.PE) {
+  
+ }
+
+ for(i in 1:n.PC) {
+  
+ }
+
+ # Prior distributions
+ 
+
+ # Relative Risk
+   
+}
